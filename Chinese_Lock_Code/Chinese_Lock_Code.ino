@@ -15,6 +15,8 @@
 #define	uchar	unsigned char
 #define	uint	unsigned int
 
+#define BOARD_TYPE BOARD_TYPE_LEONARDO //make smartthings happy
+
 //数组最大长度
 #define MAX_LEN 16
 
@@ -22,8 +24,22 @@
 //set the pins
 /////////////////////////////////////////////////////////////////////
 
+//rfid reader
 const int selectRfid = 10;
 const int NRSTPD = 9;  //reset pin, documentation calls for pin 9
+
+//SmartThings initialization
+#define PIN_THING_RX    7 // std is 3, but the Leonardo can't RX on 3, so we use the 6 pin and jumper to 3.
+#define PIN_THING_TX    2
+
+//
+const int relayPin = 8;
+const int doorExitButtonPin = 7;// was 6
+const int keypadLightPin = 5;
+
+/////////////////////////////////////////////////////////////////////
+
+const bool isDebugEnabled = true;    // enable or disable debug in this example
 
 //MF522命令字
 #define PCD_IDLE              0x00               //NO action;取消当前命令
@@ -142,10 +158,7 @@ uchar sectorNewKeyA[16][16] = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
  uchar str_tem[MAX_LEN];
  uchar str_name[MAX_LEN];
  
-//SmartThings initialization
-#define PIN_THING_RX    3 // std is 3, but the Leonardo can't RX on 3, so we use the 10 pin and jumper to 3.
-#define PIN_THING_TX    2
-const bool isDebugEnabled = true;    // enable or disable debug in this example
+
 
 SmartThingsCallout_t messageCallout;    // call out function forward decalaration
 SmartThings smartthing(PIN_THING_RX, PIN_THING_TX, messageCallout);  // constructor
@@ -159,10 +172,7 @@ Bounce buttonStateD = Bounce(A3, 5); //5ms debounce
 // Door lock
 const boolean disableKeypad = false;
 
-const int relay = 8;
 boolean relayState;
-const int doorExitButton = 7;
-const int keypadLight = 5;
 const int buzzDoorInterval = 3000;  // hold lock open for 3 seconds when triggered
 const int keypadTimeout = 5000;
 
@@ -170,9 +180,12 @@ boolean gotNFCMatch = false;
 unsigned long lockPreviousMillis = 0;
 unsigned long keypadPreviousMillis = 0;
 
-Bounce exitButton = Bounce(doorExitButton, 5); //5ms debounce
+Bounce exitButton = Bounce(doorExitButtonPin, 5); //5ms debounce
   
-void setup() {         
+void setup() {    
+  Serial.println("setup begin"); 
+   smartthing.shieldSetLED(1, 0, 0);
+ 
   //Set up NFC reader
   pinMode(selectRfid,OUTPUT);  
   digitalWrite(selectRfid, HIGH); 
@@ -181,16 +194,16 @@ void setup() {
   digitalWrite(NRSTPD, HIGH);  
 
   //Set up door lock
-  pinMode(relay,OUTPUT);
+  pinMode(relayPin,OUTPUT);
   relayState = false; 
   off();
   
-  pinMode(doorExitButton, INPUT); 
+  pinMode(doorExitButtonPin, INPUT); 
 
   //set up keypad
   setupKeyArray();
-  pinMode(keypadLight, OUTPUT);
-  analogWrite(keypadLight, 150);
+  pinMode(keypadLightPin, OUTPUT);
+  analogWrite(keypadLightPin, 150);
   
   Serial.begin(9600);         // setup serial with a baud rate of 9600
   Serial.println("Setup");
@@ -240,27 +253,28 @@ void loop()
         
                //寻卡，返回卡类型	
                status = MFRC522_Request(PICC_REQIDL, str_tem);	
-            //   Serial.print("S:");
-            //   Serial.print(status);
+               //if (isDebugEnabled) {Serial.print("S:"); Serial.print(status);}
                if (status == MI_OK) 
                {
                     status = MFRC522_Anticoll(str_tem);
                     gotNFCMatch = true;
-                    Serial.println("NFC present");
+                    if (isDebugEnabled) {Serial.println("NFC present");}
                }
 
         	//防冲撞，返回卡的序列号 4字节
         	status = MFRC522_Anticoll(str_tem);
         	memcpy(serNum, str_tem, 5);
         	if (status == MI_OK)
-        	{                   
-                    Serial.println("The card's serial number is  : ");
-        	    Serial.print(serNum[0],DEC);
-        	    Serial.print(serNum[1],DEC);
-        	    Serial.print(serNum[2],DEC);
-        	    Serial.print(serNum[3],DEC);
-        	    Serial.print(serNum[4],DEC);
-                    Serial.println(" ");
+        	{    
+                    if (isDebugEnabled) {          
+                      Serial.println("The card's serial number is  : ");
+          	      Serial.print(serNum[0],DEC);
+          	      Serial.print(serNum[1],DEC);
+          	      Serial.print(serNum[2],DEC);
+          	      Serial.print(serNum[3],DEC);
+          	      Serial.print(serNum[4],DEC);
+                      Serial.println(" ");
+                    }
         	}
                 //选卡，返回卡容量
         	RC_size = MFRC522_SelectTag(serNum);
@@ -276,7 +290,7 @@ void loop()
                           if(status == MI_OK)
                           {
                              // gotNFCMatch = true;
-                             // Serial.println("NFC Auth match");
+                             if (isDebugEnabled) { Serial.println("NFC Auth match");}
                           }
   		}
                 else
@@ -339,16 +353,18 @@ keyArray[3] = tempKey;
 boolean matchedKeyCode(unsigned long keycode) {
   
   if (disableKeypad) {
-    Serial.println("keypad disabled");
+    if (isDebugEnabled) {Serial.println("keypad disabled");}
     return false;
   }
   
   int i = keycodeArrayLen - 1;
     
   while (i >= 0) {
-    Serial.print("testing ");
-    Serial.println(keycode);
-    Serial.println(keyArray[i]);
+    if (isDebugEnabled) {
+      Serial.print("testing ");
+      Serial.println(keycode);
+      Serial.println(keyArray[i]);
+    }
     if (keycode == keyArray[i])
       return true;
     i--;
@@ -357,14 +373,14 @@ boolean matchedKeyCode(unsigned long keycode) {
 }
 
 void flashKeypad() {
-  Serial.println("flash");
-  analogWrite(keypadLight, 0);
+  if (isDebugEnabled) {Serial.println("flash");}
+  analogWrite(keypadLightPin, 0);
   delay(100);
-  analogWrite(keypadLight, 150);
+  analogWrite(keypadLightPin, 150);
   delay(100);
-  analogWrite(keypadLight, 0);
+  analogWrite(keypadLightPin, 0);
   delay(100);
-  analogWrite(keypadLight, 150);
+  analogWrite(keypadLightPin, 150);
 }
 
 void consumeKeyState() {
@@ -446,7 +462,9 @@ void serviceKeypad() {
 // ------ SmartThings code
 void on()
 {
-  digitalWrite(relay, LOW);
+  if (isDebugEnabled) {Serial.println("smartthings on");}
+
+  digitalWrite(relayPin, LOW);
   relayState = true;
   // zero timer when relay starts to open lock
   lockPreviousMillis = millis();
@@ -457,7 +475,8 @@ void on()
 
 void off()
 {
-  digitalWrite(relay, HIGH);
+  if (isDebugEnabled) {Serial.println("smartthings off");}
+  digitalWrite(relayPin, HIGH);
   relayState = false;
   smartthing.shieldSetLED(0, 0, 1);
   smartthing.send("off");       // send message to cloud
@@ -465,7 +484,7 @@ void off()
 
 void hello()
 {
-  Serial.println("hello");
+  if (isDebugEnabled) {Serial.println("hello");}
 }
 
 void messageCallout(String message)
@@ -492,6 +511,8 @@ void messageCallout(String message)
   {
     hello();
   }
+  else if (isDebugEnabled) {Serial.println("smartthings something else");}
+
 }
 // ------ end of SmartThings
 
@@ -654,8 +675,7 @@ uchar MFRC522_Request(uchar reqMode, uchar *TagType)
 	
 	TagType[0] = reqMode;
 	status = MFRC522_ToCard(PCD_TRANSCEIVE, TagType, 1, TagType, &backBits);
-//Serial.print("s:");
-//Serial.print(status);
+//if (isDebugEnabled) {Serial.print("s:"); Serial.print(status);}
 
 	if ((status != MI_OK) || (backBits != 0x10))
 	{    
